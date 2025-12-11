@@ -142,17 +142,19 @@ export const generateMsSqlSchema = (options: GeneratorOptions): string => {
   const tablesWithRelations = new Set<string>();
 
   for (const schemaTable of modelsWithImplicit) {
+    if (!schemaTable.name || !schemaTable.fields?.length) continue;
+
     const tableDbName = s(schemaTable.dbName ?? schemaTable.name);
 
     const columnFields = Object.fromEntries(
-      (schemaTable.fields || [])
+      schemaTable.fields
         .map((e) => [e.name, prismaToDrizzleColumn(e)])
         .filter((e) => e[1] !== undefined)
     );
 
     const indexesArr: string[] = [];
 
-    const relFields = (schemaTable.fields || []).filter(
+    const relFields = schemaTable.fields.filter(
       (field) => field.relationToFields && field.relationFromFields
     );
 
@@ -310,15 +312,15 @@ export const generateMsSqlSchema = (options: GeneratorOptions): string => {
       })
       .join(',\n');
 
-    relationsOutput = `export const relations = defineRelations({ ${schemaObjectEntries} }, (r) => ({\n${relationsBody}\n})));`;
+    relationsOutput = `export const relations = defineRelations({ ${schemaObjectEntries} }, (r) => ({\n${relationsBody}\n}));`;
   }
   const drizzleImportsArr = Array.from(drizzleImports.values()).sort((a, b) => a.localeCompare(b));
-  const drizzleImportStr = (drizzleImportsArr || []).length
+  const drizzleImportStr = drizzleImportsArr.length
     ? `import { ${drizzleImportsArr.join(', ')} } from 'drizzle-orm'`
     : undefined;
 
   const mssqlImportsArr = Array.from(mssqlImports.values()).sort((a, b) => a.localeCompare(b));
-  const mssqlImportStr = (mssqlImportsArr || []).length
+  const mssqlImportStr = mssqlImportsArr.length
     ? `import { ${mssqlImportsArr.join(', ')} } from 'drizzle-orm/mssql-core'`
     : undefined;
 
@@ -327,7 +329,6 @@ export const generateMsSqlSchema = (options: GeneratorOptions): string => {
     .join('\n');
   if (!importsStr?.length) importsStr = undefined;
 
-  // Changed this line - add relationsOutput instead of Object.values(rqb)
   const output = [importsStr, ...tables, relationsOutput]
     .filter((e) => e !== undefined && e.length > 0)
     .join('\n\n');
