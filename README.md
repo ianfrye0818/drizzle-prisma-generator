@@ -18,7 +18,7 @@ generator drizzle {
 generated to `schema.ts` inside of it.  
 :warning: - binary types in `MySQL`, `PostgreSQL` are not yet supported by `drizzle-orm`, therefore
 will throw an error.  
-:warning: - generator only supports `postgresql`, `mysql`, `sqlite`, `sqlserer` data providers,
+:warning: - generator only supports `postgresql`, `mysql`, `sqlite`, `sqlserver` data providers,
 others will throw an error.
 
 - Install `drizzle-orm`: `pnpm add drizzle-orm`
