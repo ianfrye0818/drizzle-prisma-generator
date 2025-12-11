@@ -77,7 +77,7 @@ const addColumnModifiers = (field: DMMF.Field, column: string) => {
         }
 
         if (value.name === 'dbgenerated') {
-          const dbGeneratedValue = (value.args || [])[0];
+          const dbGeneratedValue = value.args[0];
 
           if (dbGeneratedValue) {
             column = column + `.default(sql\`${s(dbGeneratedValue as unknown as string, '`')}\`)`;
@@ -97,8 +97,8 @@ const addColumnModifiers = (field: DMMF.Field, column: string) => {
         }
 
         const stringified = `${value.name}${
-          (value.args || []).length
-            ? '(' + (value.args || []).map((e) => String(e)).join(', ') + ')'
+          value.args.length
+            ? '(' + value.args.map((e) => String(e)).join(', ') + ')'
             : value.name.endsWith(')')
             ? ''
             : '()'
@@ -195,10 +195,10 @@ export const generateMsSqlSchema = (options: GeneratorOptions): string => {
         mssqlImports.add('foreignKey');
 
         return `foreignKey({\n\t\tname: '${fkeyName}',\n\t\tcolumns: [${(
-          field.relationFromFields || []
+          field.relationFromFields ?? []
         )
           .map((rel) => `${schemaTable.name}.${rel}`)
-          .join(', ')}],\n\t\tforeignColumns: [${(field.relationToFields || [])
+          .join(', ')}],\n\t\tforeignColumns: [${(field.relationToFields ?? [])
           .map((rel) => `${field.type}.${rel}`)
           .join(', ')}]\n\t})${
           deleteAction && deleteAction !== 'no action' ? `.onDelete('${deleteAction}')` : ''
@@ -227,16 +227,16 @@ export const generateMsSqlSchema = (options: GeneratorOptions): string => {
     }
 
     // Unique Indexes
-    if ((schemaTable.uniqueIndexes || []).length) {
+    if (schemaTable.uniqueIndexes.length) {
       mssqlImports.add('uniqueIndex');
 
-      const uniques = (schemaTable.uniqueIndexes || []).map((idx) => {
+      const uniques = schemaTable.uniqueIndexes.map((idx) => {
         const idxName = s(idx.name ?? `${schemaTable.name}_${idx.fields.join('_')}_key`);
         // _key comes from Prisma, if their AI is to be trusted
 
-        return `uniqueIndex('${idxName}')\n\t\t.on(${
-          (idx.fields || []).map((f) => `${schemaTable.name}.${f}`) || [].join(', ')
-        })`;
+        return `uniqueIndex('${idxName}')\n\t\t.on(${idx.fields
+          .map((f) => `${schemaTable.name}.${f}`)
+          .join(', ')})`;
       });
 
       indexesArr.push(...uniques);
@@ -249,7 +249,7 @@ export const generateMsSqlSchema = (options: GeneratorOptions): string => {
       const pk = schemaTable.primaryKey!;
       const pkName = s(pk.name ?? `${schemaTable.name}_cpk`);
 
-      const pkField = `primaryKey({\n\t\tname: '${pkName}',\n\t\tcolumns: [${(pk.fields || [])
+      const pkField = `primaryKey({\n\t\tname: '${pkName}',\n\t\tcolumns: [${pk.fields
         .map((f) => `${schemaTable.name}.${f}`)
         .join(', ')}]\n\t})`;
 
@@ -263,13 +263,13 @@ export const generateMsSqlSchema = (options: GeneratorOptions): string => {
     });`;
     tables.push(table);
 
-    if (!(relFields || []).length) continue;
+    if (!relFields?.length) continue;
 
     drizzleImports.add('defineRelations');
 
     tablesWithRelations.add(schemaTable.name);
 
-    const rqbRelation = (relFields || []).map((field) => {
+    const rqbRelation = relFields.map((field) => {
       if (field.relationFromFields?.length) {
         return `\t\t${field.name}: r.one.${field.type}({\n\t\t\tfrom: r.${schemaTable.name}.${
           field.relationFromFields[0]
