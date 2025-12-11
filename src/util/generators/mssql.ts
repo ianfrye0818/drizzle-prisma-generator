@@ -46,7 +46,7 @@ const addColumnModifiers = (field: DMMF.Field, column: string) => {
   if (field.isId) column = column + `.primaryKey()`;
   if (field.isUnique) column = column + `.unique()`;
 
-  if (field.default) {
+  if (field.hasDefaultValue && field.default !== undefined) {
     const defVal = field.default;
 
     switch (typeof defVal) {

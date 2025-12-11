@@ -45,7 +45,7 @@ const addColumnModifiers = (field: DMMF.Field, column: string) => {
   if (field.isId) column = column + `.primaryKey()`;
   if (field.isUnique) column = column + `.unique()`;
 
-  if (field.default) {
+  if (field.hasDefaultValue && field.default !== undefined) {
     const defVal = field.default;
 
     switch (typeof defVal) {
@@ -130,7 +130,8 @@ export const generateSQLiteSchema = (options: GeneratorOptions) => {
   const modelsWithImplicit = [...clonedModels, ...manyToManyModels] as DMMF.Model[];
 
   const tables: string[] = [];
-  const rqb: string[] = [];
+  const rqb: Record<string, string[]> = {};
+  const tablesWithRelations = new Set<string>();
 
   for (const schemaTable of modelsWithImplicit) {
     const tableDbName = s(schemaTable.dbName ?? schemaTable.name);
@@ -229,52 +230,76 @@ export const generateSQLiteSchema = (options: GeneratorOptions) => {
 
     tables.push(table);
 
-    if (!relFields.length) continue;
-    drizzleImports.add('relations');
+    if (!relFields?.length) continue;
 
-    const relationArgs = new Set<string>();
-    const rqbFields = relFields
-      .map((field) => {
-        relationArgs.add(field.relationFromFields?.length ? 'one' : 'many');
-        const relName = s(field.relationName ?? '');
+    drizzleImports.add('defineRelations');
 
-        return `\t${field.name}: ${
-          field.relationFromFields?.length
-            ? `one(${
-                field.type
-              }, {\n\t\trelationName: '${relName}',\n\t\tfields: [${field.relationFromFields
-                .map((e) => `${schemaTable.name}.${e}`)
-                .join(', ')}],\n\t\treferences: [${field
-                .relationToFields!.map((e) => `${field.type}.${e}`)
-                .join(', ')}]\n\t})`
-            : `many(${field.type}, {\n\t\trelationName: '${relName}'\n\t})`
-        }`;
+    tablesWithRelations.add(schemaTable.name);
+
+    const rqbRelation = relFields.map((field) => {
+      if (field.relationFromFields?.length) {
+        return `\t\t${field.name}: r.one.${field.type}({\n\t\t\tfrom: r.${schemaTable.name}.${
+          field.relationFromFields[0]
+        },\n\t\t\tto: r.${field.type}.${field.relationToFields![0]}\n\t\t})`;
+      } else {
+        const relatedModel = modelsWithImplicit.find((m) => m.name === field.type);
+        if (!relatedModel) {
+          return `\t\t${field.name}: r.many.${field.type}()`;
+        }
+
+        const reverseField = relatedModel.fields.find(
+          (f) =>
+            f.type === schemaTable.name &&
+            f.relationFromFields?.length &&
+            f.relationName === field.relationName
+        );
+
+        if (
+          !reverseField ||
+          !reverseField.relationFromFields?.length ||
+          !reverseField.relationToFields?.length
+        ) {
+          return `\t\t${field.name}: r.many.${field.type}()`;
+        }
+
+        return `\t\t${field.name}: r.many.${field.type}({\n\t\t\tfrom: r.${field.type}.${reverseField.relationFromFields[0]},\n\t\t\tto: r.${schemaTable.name}.${reverseField.relationToFields[0]}\n\t\t})`;
+      }
+    });
+
+    rqb[schemaTable.name] = rqbRelation;
+  }
+
+  // Generate the defineRelations call
+  let relationsOutput = '';
+  if (Object.keys(rqb).length > 0) {
+    const schemaObjectEntries = Array.from(tablesWithRelations).join(', ');
+    const relationsBody = Object.entries(rqb)
+      .map(([tableName, relations]) => {
+        return `\t${tableName}: {\n${relations.join(',\n')}\n\t}`;
       })
       .join(',\n');
 
-    const argString = Array.from(relationArgs.values()).join(', ');
-
-    const rqbRelation = `export const ${schemaTable.name}Relations = relations(${schemaTable.name}, ({ ${argString} }) => ({\n${rqbFields}\n}));`;
-
-    rqb.push(rqbRelation);
+    relationsOutput = `export const relations = defineRelations({ ${schemaObjectEntries} }, (r) => ({\n${relationsBody}\n}));`;
   }
 
   const drizzleImportsArr = Array.from(drizzleImports.values()).sort((a, b) => a.localeCompare(b));
-  const drizzleImportsStr = drizzleImportsArr.length
+  const drizzleImportStr = drizzleImportsArr.length
     ? `import { ${drizzleImportsArr.join(', ')} } from 'drizzle-orm'`
     : undefined;
 
   const sqliteImportsArr = Array.from(sqliteImports.values()).sort((a, b) => a.localeCompare(b));
-  const sqliteImportsStr = sqliteImportsArr.length
+  const sqliteImportStr = sqliteImportsArr.length
     ? `import { ${sqliteImportsArr.join(', ')} } from 'drizzle-orm/sqlite-core'`
     : undefined;
 
-  let importsStr: string | undefined = [drizzleImportsStr, sqliteImportsStr]
+  let importsStr: string | undefined = [drizzleImportStr, sqliteImportStr]
     .filter((e) => e !== undefined)
     .join('\n');
-  if (!importsStr.length) importsStr = undefined;
+  if (!importsStr?.length) importsStr = undefined;
 
-  const output = [importsStr, ...tables, ...rqb].filter((e) => e !== undefined).join('\n\n');
+  const output = [importsStr, ...tables, relationsOutput]
+    .filter((e) => e !== undefined && e.length > 0)
+    .join('\n\n');
 
   return output;
 };
